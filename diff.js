@@ -81,8 +81,8 @@ function calcDiff(){
   const cBuffer = new Uint8Array(new ArrayBuffer(maxLength + 4));
 
   for (let i = 0; i < maxLength; i++){
-    const aByte = i < aBuffer.length ? aBuffer[i] : 0;
-    const bByte = i < bBuffer.length ? bBuffer[i] : 0;
+    const aByte = aBuffer[i % aBuffer.length];
+    const bByte = bBuffer[i % bBuffer.length];
     cBuffer[i] = aByte ^ bByte;
   }
 
@@ -101,13 +101,12 @@ function applyDiff(){
   const cBuffer = new Uint8Array(cReader.result);
 
   const bSize = cBuffer[cBuffer.length-1] | (cBuffer[cBuffer.length-2] << 8) | (cBuffer[cBuffer.length-3] << 16) | (cBuffer[cBuffer.length-4] << 24);
-  console.log(bSize);
 
   const bBuffer = new Uint8Array(new ArrayBuffer(bSize));
 
   for (let i = 0; i < bSize; i++){
-    const aByte = i < aBuffer.length ? aBuffer[i] : 0;
-    const cByte = i < cBuffer.length ? cBuffer[i] : 0;
+    const aByte = aBuffer[i % aBuffer.length];
+    const cByte = cBuffer[i];
     bBuffer[i] = aByte ^ cByte;
   }
 
