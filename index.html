@@ -48,18 +48,21 @@
     <p id="error-text" style="color: red"></p>
 
     <div id="patch-generation-enable">
-      <button onclick="window.location.href += '#generate';">Click here to enable patch generation</button>
+      <button onclick="window.location.href += '#generate'; showOptions();">Click here to enable patch generation</button>
       <p>Patch generation is hidden by default to make this tool more accessable to users.</p>
     </div>
 
     <a href="https://github.com/jbritain/patchbin">View the Source Code on GitHub</a>
 
     <script>
-    if(window.location.hash == "#generate"){
+    function showOptions(){
       Array.prototype.forEach.call(document.getElementsByClassName("generation-stuff"), e => {
         e.style.display = "initial";
       });
       document.querySelector("#patch-generation-enable").style.display = "none";
+    }
+    if(window.location.hash == "#generate"){
+      showOptions;
     }
     </script>
   </body>
