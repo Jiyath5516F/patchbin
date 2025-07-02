@@ -1,69 +1,116 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://jbritain.net/stylesheet.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="https://jbritain.net/stylesheet.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
   </head>
   <body>
     <noscript>
       <dialog open>
         <h1>JavaScript disabled!</h1>
-        <p>This tool doesn't work without JavaScript. To be clear, it also doesn't track you, or mine bitcoin, or do anything nefarious. Don't believe me? <a href="https://github.com/jbritain/patchbin">Check for yourself.</a></p>
-        <p>What it does do, though, is run all processing client-side. No data is ever sent to a server, because not only do I not want to pay the cost of hosting something like that, but I also think that there's no point in doing it that way if it's possible to do it on the client.</p>
-        <br>
-        <p>So, as much as it may pain you, if you want to use this tool, you will need to add this site to your JavaScript whitelist.</p>
+        <p>
+          This tool doesn't work without JavaScript. To be clear, it also
+          doesn't track you, or mine bitcoin, or do anything nefarious. Don't
+          believe me?
+          <a href="https://github.com/jbritain/patchbin">Check for yourself.</a>
+        </p>
+        <p>
+          What it does do, though, is run all processing client-side. No data is
+          ever sent to a server, because not only do I not want to pay the cost
+          of hosting something like that, but I also think that there's no point
+          in doing it that way if it's possible to do it on the client.
+        </p>
+        <br />
+        <p>
+          So, as much as it may pain you, if you want to use this tool, you will
+          need to add this site to your JavaScript whitelist.
+        </p>
       </dialog>
     </noscript>
 
     <h1 style="margin-bottom: 0px">patchbin</h1>
     <small>by <a href="https://jbritain.net">jbritain</a></small>
-    <p>a utility for generating binary patches that can be used to reconstruct a modified version of a file without directly distributing that modification</p>
-    <hr>
-    <p>if you are looking to generate a patch file to distribute, upload the original file and your modified version, and click "generate patch". you can then safely distribute the downloaded '.bin' file without violating any licensing agreements.</p>
-    <p>if you have been given a patch file, upload the original file and the patch file, and click "apply patch".</p>
-    <p>if you find this utility useful, consider <a href="https://ko-fi.com/jbritain">donating</a> to help me keep the lights on.</p>
-    <hr>
-    <label for="file-a">original file</label>
-    <input type="file" id="file-a" />
+    <p>
+      a utility for generating binary patches that can be used to reconstruct a
+      modified version of a file without directly distributing that modification
+    </p>
+    <hr />
+    <p>
+      if you are looking to generate a patch file to distribute, click the
+      button at the bottom, upload the original file and your modified version,
+      and click "generate patch". you can then safely distribute the downloaded
+      '.bin' file without violating any licensing agreements.
+    </p>
+    <p>
+      if you have been given a patch file, upload the original file and the
+      patch file, and click "apply patch".
+    </p>
+    <p>
+      if you find this utility useful, consider
+      <a href="https://ko-fi.com/jbritain">donating</a> to help me keep the
+      lights on.
+    </p>
+    <p>
+      <b
+        >note: as this is a binary patch, the file being patched must always be
+        exactly the same. in the case of a zip archive, if the metadata of any
+        files within the archive is different (such as the last modified date),
+        the patch will fail.</b
+      >
+    </p>
+    <hr />
+    <label for="original-file">original file</label>
+    <input type="file" id="original-file" />
     <div style="display: none" class="generation-stuff">
-      <br>
-      <label for="file-b">modified file</label>
-      <input type="file" id="file-b" />
+      <br />
+      <label for="modified-file">modified file</label>
+      <input type="file" id="modified-file" />
     </div>
-    <br>
-    <label for="file-c">patch file</label>
-    <input accept=".bin" type="file" id="file-c" />
-    <br>
+    <br />
+    <label for="patch-file">patch file</label>
+    <input accept=".bin" type="file" id="patch-file" />
+    <br />
 
     <script src="./diff.js"></script>
 
-    <hr>
+    <hr />
 
     <div style="display: none" class="generation-stuff">
-      <button onclick="tryDiff()">Generate Patch</button>
+      <button onclick="tryGeneratePatch()">Generate Patch</button>
     </div>
-    <button onclick="tryApplyDiff()">Apply Patch</button>
+    <button onclick="tryApplyPatch()">Apply Patch</button>
 
     <p id="error-text" style="color: red"></p>
 
     <div id="patch-generation-enable">
-      <button onclick="window.location.href += '#generate'; showOptions();">Click here to enable patch generation</button>
-      <p>Patch generation is hidden by default to make this tool more accessable to users.</p>
+      <button onclick="window.location.href += '#generate'; showOptions();">
+        Show patch generation
+      </button>
+      <p>
+        Patch generation is hidden by default to make this tool more accessible
+        to users who are only applying the patch.
+      </p>
     </div>
 
-    <a href="https://github.com/jbritain/patchbin">View the Source Code on GitHub</a>
+    <a href="https://github.com/jbritain/patchbin"
+      >View the Source Code on GitHub</a
+    >
 
     <script>
-    function showOptions(){
-      Array.prototype.forEach.call(document.getElementsByClassName("generation-stuff"), e => {
-        e.style.display = "initial";
-      });
-      document.querySelector("#patch-generation-enable").style.display = "none";
-    }
-    if(window.location.hash == "#generate"){
-      showOptions();
-    }
+      function showOptions() {
+        Array.prototype.forEach.call(
+          document.getElementsByClassName("generation-stuff"),
+          (e) => {
+            e.style.display = "initial";
+          },
+        );
+        document.querySelector("#patch-generation-enable").style.display =
+          "none";
+      }
+      if (window.location.hash == "#generate") {
+        showOptions();
+      }
     </script>
   </body>
 </html>
