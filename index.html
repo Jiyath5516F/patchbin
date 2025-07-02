@@ -6,6 +6,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
   </head>
   <body>
+    <noscript>
+      <dialog open>
+        <h1>JavaScript disabled!</h1>
+        <p>This tool doesn't work without JavaScript. To be clear, it also doesn't track you, or mine bitcoin, or do anything nefarious. Don't believe me? <a href="https://github.com/jbritain/patchbin">Check for yourself.</a></p>
+        <p>What it does do, though, is run all processing client-side. No data is ever sent to a server, because not only do I not want to pay the cost of hosting something like that, but I also think that there's no point in doing it that way if it's possible to do it on the client.</p>
+        <br>
+        <p>So, as much as it may pain you, if you want to use this tool, you will need to add this site to your JavaScript whitelist.</p>
+      </dialog>
+    </noscript>
+
     <h1 style="margin-bottom: 0px">patchbin</h1>
     <small>by <a href="https://jbritain.net">jbritain</a></small>
     <p>a utility for generating binary patches that can be used to reconstruct a modified version of a file without directly distributing that modification</p>
@@ -16,9 +26,11 @@
     <hr>
     <label for="file-a">original file</label>
     <input type="file" id="file-a" />
-    <br>
-    <label for="file-b">modified file</label>
-    <input type="file" id="file-b" />
+    <div style="display: none" class="generation-stuff">
+      <br>
+      <label for="file-b">modified file</label>
+      <input type="file" id="file-b" />
+    </div>
     <br>
     <label for="file-c">patch file</label>
     <input accept=".bin" type="file" id="file-c" />
@@ -28,9 +40,27 @@
 
     <hr>
 
-    <button onclick="tryDiff()">Generate Patch</button>
+    <div style="display: none" class="generation-stuff">
+      <button onclick="tryDiff()">Generate Patch</button>
+    </div>
     <button onclick="tryApplyDiff()">Apply Patch</button>
 
     <p id="error-text" style="color: red"></p>
+
+    <div id="patch-generation-enable">
+      <button onclick="window.location.href += '#generate';">Click here to enable patch generation</button>
+      <p>Patch generation is hidden by default to make this tool more accessable to users.</p>
+    </div>
+
+    <a href="https://github.com/jbritain/patchbin">View the Source Code on GitHub</a>
+
+    <script>
+    if(window.location.hash == "#generate"){
+      Array.prototype.forEach.call(document.getElementsByClassName("generation-stuff"), e => {
+        e.style.display = "initial";
+      });
+      document.querySelector("#patch-generation-enable").style.display = "none";
+    }
+    </script>
   </body>
 </html>
