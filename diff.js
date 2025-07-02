@@ -54,12 +54,16 @@ let cLoaded = false;
 
 function attemptDiff(){
   if (aLoaded && bLoaded){
+    aLoaded = false;
+    bLoaded = false;
     calcDiff();
   }
 }
 
 function attemptApplyDiff(){
   if(aLoaded && cLoaded){
+    aLoaded = false;
+    cLoaded = false;
     applyDiff();
   }
 }
@@ -121,6 +125,7 @@ function tryApplyDiff(){
 }
 
 function calcDiff(){
+  document.querySelector("#error-text").innerText = "";
   const aBuffer = new Uint8Array(aReader.result);
   const bBuffer = new Uint8Array(bReader.result);
 
@@ -150,6 +155,7 @@ function calcDiff(){
 }
 
 function applyDiff(){
+  document.querySelector("#error-text").innerText = "";
   const aBuffer = new Uint8Array(aReader.result);
   const cBuffer = new Uint8Array(cReader.result);
 
