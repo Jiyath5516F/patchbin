@@ -59,6 +59,11 @@
         the patch will fail.</b
       >
     </p>
+    <p>
+      <b>large file support:</b> this tool now supports files larger than 1GB through 
+      chunked processing. files are processed in 64MB chunks to minimize memory usage. 
+      very large files (>2GB) will show a warning about processing time and memory requirements.
+    </p>
     <hr />
     <label for="original-file">original file</label>
     <input type="file" id="original-file" />
@@ -80,6 +85,14 @@
       <button onclick="tryGeneratePatch()">Generate Patch</button>
     </div>
     <button onclick="tryApplyPatch()">Apply Patch</button>
+
+    <div id="progress-container" style="display: none; margin: 20px 0;">
+      <div id="progress-text" style="margin-bottom: 10px;">Processing...</div>
+      <div style="width: 100%; background-color: #f0f0f0; border-radius: 5px; overflow: hidden;">
+        <div id="progress-bar" style="width: 0%; height: 20px; background-color: #4CAF50; transition: width 0.3s ease;"></div>
+      </div>
+      <div id="progress-details" style="margin-top: 10px; font-size: 0.9em; color: #666;"></div>
+    </div>
 
     <p id="error-text" style="color: red"></p>
 
@@ -111,6 +124,43 @@
       if (window.location.hash == "#generate") {
         showOptions();
       }
+
+      // Progress tracking functionality
+      window.updateProgress = function(message, percentage) {
+        const progressContainer = document.querySelector("#progress-container");
+        const progressText = document.querySelector("#progress-text");
+        const progressBar = document.querySelector("#progress-bar");
+        const progressDetails = document.querySelector("#progress-details");
+        
+        progressContainer.style.display = "block";
+        progressText.innerText = message;
+        
+        // Extract percentage from message if not provided separately
+        if (percentage === undefined) {
+          const match = message.match(/(\d+)%/);
+          percentage = match ? parseInt(match[1]) : 0;
+        }
+        
+        progressBar.style.width = percentage + "%";
+        
+        // Add file size information for large files
+        if (window.processingState && window.processingState.originalFile) {
+          const originalSize = (window.processingState.originalFile.size / (1024 * 1024 * 1024)).toFixed(2);
+          const modifiedSize = window.processingState.modifiedFile ? 
+            (window.processingState.modifiedFile.size / (1024 * 1024 * 1024)).toFixed(2) : 'N/A';
+          progressDetails.innerHTML = `Original file: ${originalSize} GB | Modified file: ${modifiedSize} GB`;
+        }
+        
+        // Hide progress when complete
+        if (message.includes("complete!")) {
+          setTimeout(() => {
+            progressContainer.style.display = "none";
+          }, 3000);
+        }
+      };
+
+      // Make processingState globally accessible for progress updates
+      window.processingState = processingState;
     </script>
   </body>
 </html>

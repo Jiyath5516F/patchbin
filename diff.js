@@ -44,34 +44,61 @@ function unpackBits(buffer) {
   return num;
 }
 
-const originalReader = new FileReader();
-const modifiedReader = new FileReader();
-const patchReader = new FileReader();
+// Configuration for chunked processing
+const CHUNK_SIZE = 64 * 1024 * 1024; // 64MB chunks for better memory management
 
-let originalLoaded = false;
-let modifiedLoaded = false;
-let patchLoaded = false;
+// State variables for chunked processing
+let processingState = {
+  isProcessing: false,
+  originalFile: null,
+  modifiedFile: null,
+  patchFile: null,
+  currentOperation: null
+};
 
-function attemptGeneratePatch() {
-  if (originalLoaded && modifiedLoaded) {
-    originalLoaded = false;
-    modifiedLoaded = false;
-    generatePatch();
-  }
+// Utility function to read a file chunk
+async function readFileChunk(file, start, size) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    const chunk = file.slice(start, start + size);
+    
+    reader.onload = () => resolve(new Uint8Array(reader.result));
+    reader.onerror = () => reject(reader.error);
+    
+    reader.readAsArrayBuffer(chunk);
+  });
 }
 
-function attemptApplyPatch() {
-  if (originalLoaded && patchLoaded) {
-    originalLoaded = false;
-    patchLoaded = false;
-    applyPatch();
+// Calculate MD5 hash in chunks for large files
+async function calculateMD5Hash(file) {
+  const spark = new SparkMD5.ArrayBuffer();
+  let currentChunk = 0;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  
+  while (currentChunk < totalChunks) {
+    const start = currentChunk * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, file.size);
+    const chunk = await readFileChunk(file, start, end - start);
+    
+    spark.append(chunk.buffer);
+    currentChunk++;
+    
+    // Update progress if callback exists
+    if (window.updateProgress) {
+      window.updateProgress(`Calculating checksum... ${Math.round((currentChunk / totalChunks) * 100)}%`);
+    }
   }
+  
+  return spark.end();
 }
 
-function tryGeneratePatch() {
+async function tryGeneratePatch() {
   document.querySelector("#error-text").innerText = "";
-  originalLoaded = false;
-  modifiedLoaded = false;
+  
+  if (processingState.isProcessing) {
+    document.querySelector("#error-text").innerText = "Processing in progress, please wait...";
+    return;
+  }
 
   if (document.querySelector("#original-file").files[0] == null) {
     document.querySelector("#error-text").innerText =
@@ -84,28 +111,33 @@ function tryGeneratePatch() {
     return;
   }
 
-  originalReader.readAsArrayBuffer(
-    document.querySelector("#original-file").files[0],
-  );
-  modifiedReader.readAsArrayBuffer(
-    document.querySelector("#modified-file").files[0],
-  );
-
-  originalReader.onload = () => {
-    originalLoaded = true;
-    attemptGeneratePatch();
-  };
-
-  modifiedReader.onload = () => {
-    modifiedLoaded = true;
-    attemptGeneratePatch();
-  };
+  processingState.isProcessing = true;
+  processingState.originalFile = document.querySelector("#original-file").files[0];
+  processingState.modifiedFile = document.querySelector("#modified-file").files[0];
+  processingState.currentOperation = 'generate';
+  
+  try {
+    // Validate file sizes
+    validateFileSize(processingState.originalFile, 'generate');
+    validateFileSize(processingState.modifiedFile, 'generate');
+    
+    await generatePatchChunked();
+  } catch (error) {
+    console.error("Error generating patch:", error);
+    document.querySelector("#error-text").innerText = `Error generating patch: ${error.message}`;
+  } finally {
+    processingState.isProcessing = false;
+    suggestGarbageCollection();
+  }
 }
 
-function tryApplyPatch() {
+async function tryApplyPatch() {
   document.querySelector("#error-text").innerText = "";
-  originalLoaded = false;
-  modifiedLoaded = false;
+  
+  if (processingState.isProcessing) {
+    document.querySelector("#error-text").innerText = "Processing in progress, please wait...";
+    return;
+  }
 
   if (document.querySelector("#original-file").files[0] == null) {
     document.querySelector("#error-text").innerText =
@@ -118,89 +150,157 @@ function tryApplyPatch() {
     return;
   }
 
-  originalReader.readAsArrayBuffer(
-    document.querySelector("#original-file").files[0],
-  );
-  patchReader.readAsArrayBuffer(document.querySelector("#patch-file").files[0]);
-
-  originalReader.onload = () => {
-    originalLoaded = true;
-    attemptApplyPatch();
-  };
-
-  patchReader.onload = () => {
-    patchLoaded = true;
-    attemptApplyPatch();
-  };
+  processingState.isProcessing = true;
+  processingState.originalFile = document.querySelector("#original-file").files[0];
+  processingState.patchFile = document.querySelector("#patch-file").files[0];
+  processingState.currentOperation = 'apply';
+  
+  try {
+    // Validate file sizes
+    validateFileSize(processingState.originalFile, 'apply');
+    validateFileSize(processingState.patchFile, 'apply');
+    
+    await applyPatchChunked();
+  } catch (error) {
+    console.error("Error applying patch:", error);
+    document.querySelector("#error-text").innerText = `Error applying patch: ${error.message}`;
+  } finally {
+    processingState.isProcessing = false;
+    suggestGarbageCollection();
+  }
 }
 
-function generatePatch() {
+async function generatePatchChunked() {
   document.querySelector("#error-text").innerText = "";
-  const originalBuffer = new Uint8Array(originalReader.result);
-  const modifiedBuffer = new Uint8Array(modifiedReader.result);
-
-  // we store the size of file B in the last four bytes of the diff
-  // and an md5 of the original file in the 16 bytes before that
-  // I am aware that usually header information like this is stored at the start of the file
-  // but on the other hand, who gives a fuck
-  let patchBuffer = new Uint8Array(new ArrayBuffer(modifiedBuffer.length + 20));
-
-  for (let i = 0; i < modifiedReader.result.byteLength; i++) {
-    const originalByte = originalBuffer.length > i ? originalBuffer[i] : 0; // pad a with zeros if b is larger since the patch is always the size of b
-    const modifiedByte = modifiedBuffer[i];
-    patchBuffer[i] = originalByte ^ modifiedByte;
+  
+  const originalFile = processingState.originalFile;
+  const modifiedFile = processingState.modifiedFile;
+  
+  console.log(`Original file size: ${originalFile.size} bytes`);
+  console.log(`Modified file size: ${modifiedFile.size} bytes`);
+  console.log(`Patched file size will be: ${modifiedFile.size} bytes`);
+  
+  if (window.updateProgress) {
+    window.updateProgress("Starting patch generation...");
   }
 
-  console.log(`Patched file size is ${modifiedBuffer.length}`);
-
-  let checksum = SparkMD5.ArrayBuffer.hash(originalReader.result);
+  // Calculate checksum of original file
+  const checksum = await calculateMD5Hash(originalFile);
   console.log(`Original file checksum is ${checksum}`);
 
-  let patchArray = Array.from(patchBuffer);
-  patchArray.splice(
-    patchBuffer.length - 20,
-    16,
-    ...Array.from(fromHexString(checksum)),
-  );
-  patchArray.splice(
-    patchBuffer.length - 4,
-    4,
-    ...packBits(modifiedBuffer.length, 4),
-  );
-  patchBuffer = Uint8Array.from(patchArray);
+  // Create a blob stream for the patch file
+  const patchChunks = [];
+  const totalChunks = Math.ceil(modifiedFile.size / CHUNK_SIZE);
+  let processedBytes = 0;
 
-  const blob = new Blob([patchBuffer], { type: "application/octet-stream" });
-  saveFile(
-    blob,
-    document.querySelector("#modified-file").files[0].name + "_patch.bin",
-  );
+  // Process file in chunks
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const start = chunkIndex * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, modifiedFile.size);
+    const chunkSize = end - start;
+
+    // Read chunks from both files
+    const modifiedChunk = await readFileChunk(modifiedFile, start, chunkSize);
+    let originalChunk;
+    
+    if (start < originalFile.size) {
+      const originalChunkSize = Math.min(chunkSize, originalFile.size - start);
+      originalChunk = await readFileChunk(originalFile, start, originalChunkSize);
+      
+      // If original chunk is smaller, pad with zeros
+      if (originalChunkSize < chunkSize) {
+        const paddedOriginal = new Uint8Array(chunkSize);
+        paddedOriginal.set(originalChunk);
+        originalChunk = paddedOriginal;
+      }
+    } else {
+      // Original file is smaller, create zero-filled chunk
+      originalChunk = new Uint8Array(chunkSize);
+    }
+
+    // XOR the chunks
+    const patchChunk = new Uint8Array(chunkSize);
+    for (let i = 0; i < chunkSize; i++) {
+      patchChunk[i] = originalChunk[i] ^ modifiedChunk[i];
+    }
+
+    patchChunks.push(patchChunk);
+    processedBytes += chunkSize;
+
+    // Update progress
+    if (window.updateProgress) {
+      const progress = Math.round((processedBytes / modifiedFile.size) * 100);
+      window.updateProgress(`Generating patch... ${progress}%`);
+    }
+
+    // Allow UI to update and prevent browser freezing
+    await new Promise(resolve => setTimeout(resolve, 0));
+    
+    // Suggest garbage collection for large files
+    if (window.gc && chunkIndex % 10 === 0) {
+      window.gc();
+    }
+  }
+
+  // Create the final patch with metadata
+  const totalPatchSize = modifiedFile.size + 20;
+  const finalPatchChunk = new Uint8Array(20);
+  
+  // Add checksum (16 bytes)
+  const checksumBytes = fromHexString(checksum);
+  finalPatchChunk.set(checksumBytes, 0);
+  
+  // Add file size (4 bytes)
+  const sizeBytes = packBits(modifiedFile.size, 4);
+  finalPatchChunk.set(sizeBytes, 16);
+  
+  patchChunks.push(finalPatchChunk);
+
+  // Create blob from chunks
+  const blob = new Blob(patchChunks, { type: "application/octet-stream" });
+  
+  if (window.updateProgress) {
+    window.updateProgress("Saving patch file...");
+  }
+  
+  saveFile(blob, modifiedFile.name + "_patch.bin");
+  
+  if (window.updateProgress) {
+    window.updateProgress("Patch generation complete!");
+  }
 }
 
-function applyPatch() {
+async function applyPatchChunked() {
   document.querySelector("#error-text").innerText = "";
-  const originalBuffer = new Uint8Array(originalReader.result);
-  const patchBuffer = new Uint8Array(patchReader.result);
+  
+  const originalFile = processingState.originalFile;
+  const patchFile = processingState.patchFile;
+  
+  if (window.updateProgress) {
+    window.updateProgress("Reading patch metadata...");
+  }
 
-  const patchArray = Array.from(patchBuffer);
-  const patchSize = unpackBits(patchArray.slice(patchBuffer.length - 3));
-  console.log(`Patched file size is ${patchSize} bytes`);
+  // Read the last 20 bytes to get metadata
+  const metadataBuffer = await readFileChunk(patchFile, patchFile.size - 20, 20);
+  
+  // Extract file size (last 4 bytes)
+  const sizeBytes = Array.from(metadataBuffer.slice(16, 20));
+  const patchedFileSize = unpackBits(sizeBytes);
+  console.log(`Patched file size is ${patchedFileSize} bytes`);
 
-  if (patchSize == 0) {
+  if (patchedFileSize == 0) {
     console.log("Patched file size cannot be zero");
     document.querySelector("#error-text").innerText =
       "Patched file size was zero! This usually indicates a corrupt or invalid patch file.";
     return;
   }
 
-  const checksumFromPatch = toHexString(
-    Uint8Array.from(
-      patchArray.slice(patchArray.length - 20, patchArray.length - 4),
-    ),
-  );
-  console.log(
-    `Patch file expected original file checksum to be ${checksumFromPatch}`,
-  );
-  const checksumFromUpload = SparkMD5.ArrayBuffer.hash(originalReader.result);
+  // Extract checksum (first 16 bytes of metadata)
+  const checksumFromPatch = toHexString(metadataBuffer.slice(0, 16));
+  console.log(`Patch file expected original file checksum to be ${checksumFromPatch}`);
+  
+  // Calculate checksum of uploaded original file
+  const checksumFromUpload = await calculateMD5Hash(originalFile);
   console.log(`Original file checksum is ${checksumFromUpload}`);
 
   if (checksumFromPatch != checksumFromUpload) {
@@ -212,38 +312,115 @@ function applyPatch() {
 
   console.log("Checksums match!");
 
-  const modifiedBuffer = new Uint8Array(new ArrayBuffer(patchSize));
-
-  for (let i = 0; i < patchSize; i++) {
-    const originalByte = originalBuffer.length > i ? originalBuffer[i] : 0;
-    const patchByte = patchBuffer[i];
-    modifiedBuffer[i] = originalByte ^ patchByte;
+  if (window.updateProgress) {
+    window.updateProgress("Applying patch...");
   }
 
-  const blob = new Blob([modifiedBuffer], { type: "application/octet-stream" });
-  // remove anything from the filename after the last occurrence of "_patch"
-  let filename = document.querySelector("#patch-file").files[0].name;
+  // Process patch in chunks
+  const modifiedChunks = [];
+  const totalChunks = Math.ceil(patchedFileSize / CHUNK_SIZE);
+  let processedBytes = 0;
+
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const start = chunkIndex * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, patchedFileSize);
+    const chunkSize = end - start;
+
+    // Read patch chunk (excluding metadata)
+    const patchChunk = await readFileChunk(patchFile, start, chunkSize);
+    
+    // Read original chunk
+    let originalChunk;
+    if (start < originalFile.size) {
+      const originalChunkSize = Math.min(chunkSize, originalFile.size - start);
+      originalChunk = await readFileChunk(originalFile, start, originalChunkSize);
+      
+      // If original chunk is smaller, pad with zeros
+      if (originalChunkSize < chunkSize) {
+        const paddedOriginal = new Uint8Array(chunkSize);
+        paddedOriginal.set(originalChunk);
+        originalChunk = paddedOriginal;
+      }
+    } else {
+      // Original file is smaller, create zero-filled chunk
+      originalChunk = new Uint8Array(chunkSize);
+    }
+
+    // XOR to get modified chunk
+    const modifiedChunk = new Uint8Array(chunkSize);
+    for (let i = 0; i < chunkSize; i++) {
+      modifiedChunk[i] = originalChunk[i] ^ patchChunk[i];
+    }
+
+    modifiedChunks.push(modifiedChunk);
+    processedBytes += chunkSize;
+
+    // Update progress
+    if (window.updateProgress) {
+      const progress = Math.round((processedBytes / patchedFileSize) * 100);
+      window.updateProgress(`Applying patch... ${progress}%`);
+    }
+
+    // Allow UI to update
+    await new Promise(resolve => setTimeout(resolve, 0));
+    
+    // Suggest garbage collection for large files
+    if (window.gc && chunkIndex % 10 === 0) {
+      window.gc();
+    }
+  }
+
+  if (window.updateProgress) {
+    window.updateProgress("Saving modified file...");
+  }
+
+  // Create blob from chunks
+  const blob = new Blob(modifiedChunks, { type: "application/octet-stream" });
+  
+  // Remove anything from the filename after the last occurrence of "_patch"
+  let filename = patchFile.name;
   saveFile(blob, filename.slice(0, filename.lastIndexOf("_patch")));
+  
+  if (window.updateProgress) {
+    window.updateProgress("Patch application complete!");
+  }
+}
+
+// Memory optimization utilities
+function suggestGarbageCollection() {
+  if (window.gc) {
+    window.gc();
+  }
+}
+
+// Add file size validation and warnings
+function validateFileSize(file, operation) {
+  const fileSize = file.size;
+  const fileSizeGB = fileSize / (1024 * 1024 * 1024);
+  
+  console.log(`File size: ${fileSizeGB.toFixed(2)} GB`);
+  
+  // Warn for very large files
+  if (fileSizeGB > 2) {
+    const proceed = confirm(
+      `Warning: This file is ${fileSizeGB.toFixed(2)} GB in size. ` +
+      `Processing may take a significant amount of time and memory. ` +
+      `For files larger than your available RAM, the browser may become unresponsive. ` +
+      `Do you want to continue?`
+    );
+    if (!proceed) {
+      throw new Error("Operation cancelled by user");
+    }
+  }
+  
+  // Info for moderately large files
+  if (fileSizeGB > 0.5) {
+    console.log(`Processing large file (${fileSizeGB.toFixed(2)} GB). This may take some time...`);
+  }
 }
 
 function setTab(t) {
-  const applyTab = document.querySelector("#apply-tab");
-  const genTab = document.querySelector("#gen-tab");
-  const bcLabel = document.querySelector("#modified-patch-file-label");
-  const goButton = document.querySelector("#go-button");
-  const goButtonText = document.querySelector("#go-button-text");
-
-  if (t == genTab) {
-    genTab.classList.add("tab-active");
-    applyTab.classList.remove("tab-active");
-    bcLabel.innerText = "Modified File";
-    goButton.onclick = tryGeneratePatch;
-    goButtonText.innerText = "Generate Patch";
-  } else {
-    genTab.classList.remove("tab-active");
-    applyTab.classList.add("tab-active");
-    bcLabel.innerText = "Patch File";
-    goButton.onclick = tryApplyPatch;
-    goButtonText.innerText = "Patch";
-  }
+  // Note: The original setTab function referenced elements that don't exist in the current HTML
+  // This is a placeholder for any tab functionality that might be added later
+  console.log("setTab function called with:", t);
 }
